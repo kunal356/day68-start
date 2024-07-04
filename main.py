@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, url_for, redirect, flash, sen
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import Integer, String
+from sqlalchemy import Integer, String, Boolean
 from flask_login import UserMixin, login_user, LoginManager, login_required, current_user, logout_user
 
 app = Flask(__name__)
@@ -22,7 +22,7 @@ db.init_app(app)
 # CREATE TABLE IN DB
 
 
-class User(db.Model):
+class User(UserMixin, db.Model):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(100), unique=True)
     password: Mapped[str] = mapped_column(String(100))
@@ -31,6 +31,14 @@ class User(db.Model):
 
 with app.app_context():
     db.create_all()
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.get_or_404(int(user_id))
 
 
 @app.route('/')
@@ -43,30 +51,45 @@ def register():
     if request.method == "POST":
         user_name = request.form.get("name")
         user_email = request.form.get("email")
-        user_pass = generate_password_hash(password=request.form.get("password"), method='pbkdf2', salt_length=8)
+        user_pass = generate_password_hash(password=request.form.get(
+            "password"), method='pbkdf2', salt_length=8)
         new_user = User(email=user_email, password=user_pass, name=user_name)
         db.session.add(new_user)
         db.session.commit()
-        return render_template('secrets.html', user_name=user_name)
+        login_user(new_user)
+        return redirect(url_for('secrets'))
     return render_template("register.html")
 
 
-@app.route('/login')
+@app.route('/login', methods=['GET', 'POST'])
 def login():
+    if request.method == "POST":
+        user_email = request.form.get('email')
+        user_pass = request.form.get('password')    
+        user_found = db.session.execute(db.select(User).where(User.email == user_email)).scalar()
+        if user_found:
+            if check_password_hash(pwhash=user_found.password, password=user_pass):
+                login_user(user=user_found)
+        return redirect(url_for("secrets"))
     return render_template("login.html")
 
 
 @app.route('/secrets')
+@login_required
 def secrets():
-    return render_template("secrets.html")
+    
+    return render_template("secrets.html", user_name = current_user.name)
 
 
 @app.route('/logout')
+@login_required
 def logout():
-    pass
+    logout_user()
+    return redirect(url_for('home'))
 
 
 @app.route('/download')
+@login_required
 def download():
     return send_from_directory(directory='static',
                                path='files/cheat_sheet.pdf', as_attachment=True)
