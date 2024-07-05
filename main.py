@@ -51,6 +51,10 @@ def register():
     if request.method == "POST":
         user_name = request.form.get("name")
         user_email = request.form.get("email")
+        user_already_exists = db.session.execute(db.select(User).where(User.email == user_email))
+        if user_already_exists:
+            flash('User already exists. Please Login!!!!')
+            return redirect(url_for('login'))
         user_pass = generate_password_hash(password=request.form.get(
             "password"), method='pbkdf2', salt_length=8)
         new_user = User(email=user_email, password=user_pass, name=user_name)
@@ -70,14 +74,19 @@ def login():
         if user_found:
             if check_password_hash(pwhash=user_found.password, password=user_pass):
                 login_user(user=user_found)
-        return redirect(url_for("secrets"))
+                return redirect(url_for("secrets"))
+            else:
+                flash('You have entered wrong password. Please try again.....!!!!!!')
+                return redirect(url_for('login'))
+        else:
+            flash('The email address you entered does not exists. Please try again......!!!!!')
+            return redirect(url_for('login'))
     return render_template("login.html")
 
 
 @app.route('/secrets')
 @login_required
 def secrets():
-    
     return render_template("secrets.html", user_name = current_user.name)
 
 
